@@ -23,14 +23,13 @@ def readfile(file):
 
 
 def print_address(process):
-    print("PROCESS ID: ", end=" ")
+    print("PID: ", end='\t')
     print(process.process_id)
     for i in range(0, len(process.virtual)):
-        print("Virtual: ", end=" ")
-        print(process.virtual[i], end="\t")
-        print("Physical: ", end=" ")
+        print("Virtual Memory: ", end='\t')
+        print(process.virtual[i], end='\t')
+        print("Physical Memory: ", end='\t')
         print(physical_memory[i])
-        print("\n")
 
 if __name__ == "__main__":
     processes = readfile('memory.dat')
