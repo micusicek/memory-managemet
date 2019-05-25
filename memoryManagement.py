@@ -1,23 +1,3 @@
-
-Conversation opened. 1 unread message.
-
-
-Skip to content
-Using Gmail with screen readers
-Enable desktop notifications for Gmail.
-   OK  No thanks
-
-1 of 4,254
-project
-
-Jose Sandoval
-Attachments
-7:59 PM (0 minutes ago)
-to me
-
-
-Attachments area
-
 import queue
 
 
@@ -85,7 +65,3 @@ if __name__ == "__main__":
 
     for i in range(0, len(created_processes)):
         print_address(created_processes[i])
-
-
-memoryproject.py
-Displaying memoryproject.py.
