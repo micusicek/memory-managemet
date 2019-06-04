@@ -27,7 +27,7 @@ typedef struct {
 
 typedef struct {
     int id;
-    int state; // C(reated), T(erminated), - for no process
+    int state; // C(reated), T(erminated), K(illed), - for no process
 } Job;
 
 typedef struct {
@@ -99,8 +99,6 @@ void parseJobActivity(Activity *a, char *s)
         );
         exit(EXIT_FAILURE);
     }
-
-    return;
 }
 
 void readActivity(char *filename, Activity *a, int aCount) {
@@ -125,8 +123,6 @@ void readActivity(char *filename, Activity *a, int aCount) {
             exit(EXIT_FAILURE);
         }
     }
-
-    return;
 }
 
 void activityInitialize(Activity *activities, int aLen) {
@@ -136,7 +132,6 @@ void activityInitialize(Activity *activities, int aLen) {
         a->action = '-';
         a->pageId = -1;
     }
-    return;
 }
 
 void printActivity(Activity *a)
@@ -151,6 +146,175 @@ void printActivity(Activity *a)
     } else {
         printf("\n");
     }
+}
+
+void memoryInitialize(MemoryPage *m)
+{
+    m->jobId         = -1;
+    m->virtualPageId = -1;
+    m->dirty         = 0;
+}
+
+void memoryPrint(MemoryPage *memoryPages, int size)
+{
+    int isMemoryEmpty = 1;
+    for(int i = 0; i < size; i++) {
+        MemoryPage *m = &memoryPages[i];
+        if(m->jobId == -1) {
+            continue;
+        }
+        isMemoryEmpty = 0;
+        printf(
+            "\tpage [%d] job id [%d] virtual page id [%d] dirty [%d]\n",
+            i,
+            m->jobId,
+            m->virtualPageId,
+            m->dirty
+        );
+    }
+    if(isMemoryEmpty) {
+        printf("\tmemory is empty\n");
+    }
+}
+
+void swapInitialize(SwapPage *s)
+{
+    s->jobId         = -1;
+    s->virtualPageId = -1;
+}
+
+void swapPrint(KernelData *k)
+{
+    int isSwapEmpty = 1;
+    for(int i = 0; i < LEN(k->s); i++) {
+        SwapPage *s = &k->s[i];
+        if(s->jobId == -1) {
+            continue;
+        }
+        isSwapEmpty = 0;
+        printf(
+            "\tswap page [%d] job id [%d] virtual page id [%d]\n",
+            i,
+            s->jobId,
+            s->virtualPageId
+        );
+    }
+    if(isSwapEmpty) {
+        printf("\tswap is empty\n");
+    }
+}
+
+int swapFind(KernelData *k, int jobId, int virtualPageId)
+{
+    for(int i = 0; i < LEN(k->s); i++) {
+        SwapPage *s = &k->s[i];
+        if((s->jobId == jobId) && (s->virtualPageId == virtualPageId)) {
+            return i;
+        }
+    }
+
+    return -1;
+}
+
+int swapFindMemoryPage(KernelData *k, MemoryPage *m)
+{
+    return swapFind(k, m->jobId, m->virtualPageId);
+}
+
+int swapDestroy(KernelData *k, int jobId, int virtualPageId)
+{
+    int destroyedSomething = 0;
+
+    for(int i = 0; i < LEN(k->s); i++) {
+        SwapPage *s = &k->s[i];
+        if((s->jobId == jobId) && (s->virtualPageId == virtualPageId)) {
+            swapInitialize(s);
+            destroyedSomething = 1;
+        }
+    }
+
+    return destroyedSomething ? 0 : -1;
+}
+
+void swapDestroyMemoryPage(KernelData *k, MemoryPage *m)
+{
+    for(int i = 0; i < LEN(k->s); i++) {
+        SwapPage *s = &k->s[i];
+        if((s->jobId == m->jobId) && (s->virtualPageId == m->virtualPageId)) {
+            swapInitialize(s);
+        }
+    }
+}
+
+void swapDestroyJobPages(KernelData *k, int jobId)
+{
+    for(int i = 0; i < LEN(k->s); i++) {
+        SwapPage *s = &k->s[i];
+        if(s->jobId == jobId) {
+            swapInitialize(s);
+        }
+    }
+}
+
+int swapSelectFIFO(MemoryPage *m, int size)
+{
+    printf("FATAL: swap select FIFO not implemented yet\n");
+}
+
+int swapSelectLRU(MemoryPage *m, int size)
+{
+    printf("FATAL: swap select LRU not implemented yet\n");
+}
+
+int swapSelectRandom(MemoryPage *m, int size)
+{
+    return rand() % size;
+}
+
+int swapOut(KernelData *k)
+{
+    // if there's clean page that's also in swap, use it
+    for(int i = 0; i < LEN(k->m); i++) {
+        MemoryPage *m = &k->m[i];
+        // is this page clean and in swap?
+        if(!m->dirty && (swapFindMemoryPage(k, m) != -1)) {
+            // it's already in swap and it wasn't changed so we can use it
+            return i;
+        }
+    }
+
+    // pick any page and use it (swap out existing data first)
+    int mIndex = swapSelectRandom(k->m, LEN(k->m));
+    MemoryPage *m = &k->m[mIndex];
+
+    for(int i = 0; i < LEN(k->s); i++) {
+        SwapPage *s = &k->s[i];
+        if(s->jobId == -1) {
+            s->jobId = m->jobId;
+            s->virtualPageId = m->virtualPageId;
+            break;
+        }
+    }
+
+    memoryInitialize(m); // refurbish :)
+
+    return mIndex;
+}
+
+int swapIn(KernelData *k, int jobId, int virtualPageId)
+{
+    int sIndex = swapFind(k, jobId, virtualPageId);
+    if(sIndex == -1) {
+        return -1;
+    }
+
+    int mIndex = swapOut(k);
+    MemoryPage *m = &k->m[mIndex];
+    SwapPage   *s = &k->s[sIndex];
+    m->jobId = s->jobId;
+    m->virtualPageId = s->virtualPageId;
+
+    return mIndex;
 }
 
 void jobsPrint(Job *jobs, int size)
@@ -189,136 +353,27 @@ void jobMustNotExist(KernelData *k, int id)
     }
 }
 
-int jobMustExist(KernelData *k, int id)
+// end the job, state should be one of T(erminate), K(ill)
+int jobEnd(KernelData *k, int jobId, char state)
 {
-    int index = jobIndex(k, id);
-
-    if(index == -1) {
-        printf("FATAL: job id [%d] is not running\n", id);
-        exit(EXIT_FAILURE);
-    }
-    return index;
-}
-
-void memoryInitialize(MemoryPage *m)
-{
-    m->jobId         = -1;
-    m->virtualPageId = -1;
-    m->dirty         = 0;
-
-    return;
-}
-
-void memoryPrint(MemoryPage *memoryPages, int size)
-{
-    int isMemoryEmpty = 1;
-    for(int i = 0; i < size; i++) {
-        MemoryPage *m = &memoryPages[i];
-        if(m->jobId == -1) {
-            continue;
-        }
-        isMemoryEmpty = 0;
-        printf(
-            "\tpage [%d] job id [%d] virtual page id [%d] dirty [%d]\n",
-            i,
-            m->jobId,
-            m->virtualPageId,
-            m->dirty
-        );
-    }
-    if(isMemoryEmpty) {
-        printf("\tmemory is empty\n");
-    }
-}
-
-void swapInitialize(SwapPage *s)
-{
-    s->jobId         = -1;
-    s->virtualPageId = -1;
-
-    return;
-}
-
-void swapPrint(KernelData *k)
-{
-    int isSwapEmpty = 1;
-    for(int i = 0; i < LEN(k->s); i++) {
-        SwapPage *s = &k->s[i];
-        if(s->jobId == -1) {
-            continue;
-        }
-        isSwapEmpty = 0;
-        printf(
-            "\tswap page [%d] job id [%d] virtual page id [%d]\n",
-            i,
-            s->jobId,
-            s->virtualPageId
-        );
-    }
-    if(isSwapEmpty) {
-        printf("\tswap is empty\n");
-    }
-}
-
-int swapFind(KernelData *k, MemoryPage *m)
-{
-    for(int i = 0; i < LEN(k->s); i++) {
-        SwapPage *s = &k->s[i];
-        if((s->jobId == m->jobId) && (s->virtualPageId == m->virtualPageId)) {
-            return i;
-        }
+    int jIndex = jobIndex(k, jobId);
+    if(jIndex == -1) {
+        return -1;
     }
 
-    return -1;
-}
+    k->j[jIndex].state = state;
 
-int swapSelectFIFO(MemoryPage *m, int size)
-{
-    printf("FATAL: swap select FIFO not implemented yet\n");
-}
-
-int swapSelectLRU(MemoryPage *m, int size)
-{
-    printf("FATAL: swap select LRU not implemented yet\n");
-}
-
-int swapSelectRandom(MemoryPage *m, int size)
-{
-    return rand() % size;
-}
-
-int swapOut(KernelData *k)
-{
-    // if there's clean page that's also in swap, use it
+    // free job memory
     for(int i = 0; i < LEN(k->m); i++) {
         MemoryPage *m = &k->m[i];
-        // is this page in swap?
-        if(m->dirty) {
-            continue;
-        }
-        int swapIndex = swapFind(k, m);
-        if(swapIndex != -1) {
-            // it's already in swap and it wasn't changed so we can use it
-            return i;
+        if(m->jobId == jobId) {
+            memoryInitialize(m);
         }
     }
 
-    // pick any page and use it (swap out existing data first)
-    int mIndex = swapSelectRandom(k->m, LEN(k->m));
-    MemoryPage *m = &k->m[mIndex];
+    swapDestroyJobPages(k, jobId);
 
-    for(int i = 0; i < LEN(k->s); i++) {
-        SwapPage *s = &k->s[i];
-        if(s->jobId == -1) {
-            s->jobId = m->jobId;
-            s->virtualPageId = m->virtualPageId;
-            break;
-        }
-    }
-
-    memoryInitialize(m); // refurbish :)
-
-    return mIndex;
+    return jIndex;
 }
 
 void kernelInitialize(KernelData *k)
@@ -337,7 +392,6 @@ void kernelInitialize(KernelData *k)
         s->jobId         = -1;
         s->virtualPageId = -1;
     }
-    return;
 }
 
 void kernelPrint(KernelData *k)
@@ -350,7 +404,7 @@ void kernelPrint(KernelData *k)
     swapPrint(k);
 }
 
-void runCreate(Activity *a, KernelData *k) {
+int runCreate(Activity *a, KernelData *k) {
     jobMustNotExist(k, a->jobId);
 
     for(int i = 0; i < LEN(k->j); i++) {
@@ -359,7 +413,7 @@ void runCreate(Activity *a, KernelData *k) {
             // add job to job table
             j->id    = a->jobId;
             j->state = 'C';
-            return;
+            return 0;
         }
 
     }
@@ -368,36 +422,21 @@ void runCreate(Activity *a, KernelData *k) {
     kernelPrint(k);
     printf("Too many jobs\n");
     exit(EXIT_FAILURE);
-
-    return;
 }
 
-void runTerminate(Activity *a, KernelData *k) {
-    // terminate job
-    int id = jobMustExist(k, a->jobId);
-    k->j[id].state = 'T';
-
-    // free job memory
-    for(int i = 0; i < LEN(k->m); i++) {
-        MemoryPage *m = &k->m[i];
-        if(m->jobId == a->jobId) {
-            memoryInitialize(m);
-        }
+int runTerminate(Activity *a, KernelData *k) {
+    if(jobEnd(k, a->jobId, 'T') == -1) {
+        printf("WARN: action refers to a non existent job\n");
+        return -1;
     }
-
-    // free swap
-    for(int i = 0; i < LEN(k->s); i++) {
-        SwapPage *s = &k->s[i];
-        if(s->jobId == a->jobId) {
-            swapInitialize(s);
-        }
-    }
-
-    return;
+    return 0;
 }
 
-void runAllocate(Activity *a, KernelData *k) {
-    jobMustExist(k, a->jobId);
+int runAllocate(Activity *a, KernelData *k) {
+    if(jobIndex(k, a->jobId) == -1) {
+        printf("WARN: action refers to non existent job\n");
+        return -1;
+    }
 
     // allocate memory for job
     for(int i = 0; i < LEN(k->m); i++) {
@@ -406,68 +445,108 @@ void runAllocate(Activity *a, KernelData *k) {
             m->jobId         = a->jobId;
             m->virtualPageId = a->pageId;
             m->dirty         = 0;
-            return;
+            return 0;
         }
     }
 
     // swap a page out and use it
     // TODO: make swap selector a parameter (FIFO, LRU, Random)
-    int mIndex = swapOut(k);
-    MemoryPage *m = &k->m[mIndex];
+    int mIndex       = swapOut(k);
+    MemoryPage *m    = &k->m[mIndex];
     m->jobId         = a->jobId;
     m->virtualPageId = a->pageId;
     m->dirty         = 0;
+
+    return 0;
 }
 
-void runRead(Activity *a, KernelData *k) {
-    jobMustExist(k, a->jobId);
+int runRead(Activity *a, KernelData *k) {
+    if(jobIndex(k, a->jobId) == -1) {
+        printf("WARN: action refers to non existent job\n");
+        return -1;
+    }
 
     // prepare to maybe mark it read later
     for(int i = 0; i < LEN(k->m); i++) {
         MemoryPage *m = &k->m[i];
-        if((m->jobId == a->jobId) && (m->virtualPageId = a->pageId)) {
+        if((m->jobId == a->jobId) && (m->virtualPageId == a->pageId)) {
             // maybe later mark it as read
-            return;
+            return 0;
         }
     }
 
-    // page does not exist
-    printf("FATAL: sorry, no such page\n");
-    exit(EXIT_FAILURE);
+    // might be in swap
+    int mIndex = swapIn(k, a->jobId, a->pageId);
+    if(mIndex != -1) {
+        // mark read later maybe?
+        return 0;
+    }
+
+    // page does not exist, BAD job!
+    jobEnd(k, a->jobId, 'K');
+
+    return 0;
 }
 
-void runWrite(Activity *a, KernelData *k) {
-    jobMustExist(k, a->jobId);
+int runWrite(Activity *a, KernelData *k) {
+    if(jobIndex(k, a->jobId) == -1) {
+        printf("WARN: action refers to non existent job\n");
+        return -1;
+    }
 
     // mark page dirty
     for(int i = 0; i < LEN(k->m); i++) {
         MemoryPage *m = &k->m[i];
-        if((m->jobId == a->jobId) && (m->virtualPageId = a->pageId)) {
+        if((m->jobId == a->jobId) && (m->virtualPageId == a->pageId)) {
             m->dirty = 1;
-            return;
+            swapDestroyMemoryPage(k, m);
+            return 0;
         }
     }
 
-    // page does not exist
-    printf("FATAL: sorry, no such page\n");
-    exit(EXIT_FAILURE);
+    // might be in swap
+    int mIndex = swapIn(k, a->jobId, a->pageId);
+    if(mIndex != -1) {
+        // we're writing so it's dirty
+        k->m[mIndex].dirty = 1;
+        return 0;
+    }
+
+    // page does not exist, BAD job!
+    jobEnd(k, a->jobId, 'K');
+
+    return 0;
 }
 
-void runFree(Activity *a, KernelData *k) {
-    jobMustExist(k, a->jobId);
+int runFree(Activity *a, KernelData *k) {
+    if(jobIndex(k, a->jobId) == -1) {
+        printf("WARN: action refers to non existent job\n");
+        return -1;
+    }
+
+    int deletedSomething = 0;
 
     // free page
     for(int i = 0; i < LEN(k->m); i++) {
         MemoryPage *m = &k->m[i];
-        if((m->jobId == a->jobId) && (m->virtualPageId = a->pageId)) {
+        if((m->jobId == a->jobId) && (m->virtualPageId == a->pageId)) {
             memoryInitialize(m);
-            return;
+            deletedSomething = 1;
+            break;
         }
     }
 
-    // page does not exist
-    printf("FATAL: sorry, no such page\n");
-    exit(EXIT_FAILURE);
+    // free page in swap
+    if(swapDestroy(k, a->jobId, a->pageId) != -1) {
+        deletedSomething = 1;
+    }
+
+    if(!deletedSomething) {
+        // page does not exist, BAD job!
+        jobEnd(k, a->jobId, 'K');
+    }
+
+    return 0;
 }
 
 void run(Activity *activities, int aCount)
@@ -484,37 +563,39 @@ void run(Activity *activities, int aCount)
         i++, a = &activities[i]
     ) {
         Activity *a = &activities[i];
+        printf("run: ****************************************************\n");
         printf("run: activity: ");
         printActivity(a);
+        int runResult;
         switch(a->action) {
         case 'C':
-            runCreate(a, k);
+            runResult = runCreate(a, k);
             break;
         case 'T':
-            runTerminate(a, k);
+            runResult = runTerminate(a, k);
             break;
         case 'A':
-            runAllocate(a, k);
+            runResult = runAllocate(a, k);
             break;
         case 'R':
-            runRead(a, k);
+            runResult = runRead(a, k);
             break;
         case 'W':
-            runWrite(a, k);
+            runResult = runWrite(a, k);
             break;
         case 'F':
-            runFree(a, k);
+            runResult = runFree(a, k);
             break;
         default:
             printf("run: unknown action %c\n", a->action);
             exit(EXIT_FAILURE);
         }
-        kernelPrint(k);
+        if(runResult != -1) {
+            kernelPrint(k);
+        }
     }
 
     if(k != NULL) { free(k); }
-
-    return;
 }
 
 //////////////////////////////////////////////////
@@ -523,7 +604,7 @@ void run(Activity *activities, int aCount)
 
 int main(void)
 {
-    // seed the random number gennerator (fro swapSelectRandom)
+    // seed the random number gennerator (for swapSelectRandom)
     srand(time(0));
 
     Activity a[ACTIVITY_MAX_COUNT];
